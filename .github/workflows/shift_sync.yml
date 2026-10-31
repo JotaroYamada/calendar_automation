@@ -1,9 +1,12 @@
 name: Shift Sync Automation
 
 on:
+  # 手動実行（workflow_dispatch）を残す場合
+  workflow_dispatch:
+
+  #日本時間の毎日 朝2:00に自動実行する場合
   schedule:
-    - cron: '0 2 * * *'  # 毎日日本時間午前11時（UTC 2時）に自動実行（お好みで変更可能）
-  workflow_dispatch:      # GitHubの画面から手動でも実行できるようにする
+    - cron: '0 17 * * *'  # ※UTC時間で指定するため、日本時間の朝8時は前日の23:00（JST 9時間引く）になります
 
 jobs:
   run-script:
