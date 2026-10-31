@@ -1,6 +1,7 @@
 import os
 import datetime
 import json
+import time
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
@@ -53,7 +54,7 @@ def main():
             addParents=ARCHIVE_FOLDER_ID,
             removeParents=DRIVE_FOLDER_ID
         ).execute()
-        print(f"   📦 古いファイルをアーカイブへ移動しました: {file_name}")
+        print(f"    📦 古いファイルをアーカイブへ移動しました: {file_name}")
 
     target_file = files[0]
     file_id = target_file['id']
@@ -64,7 +65,7 @@ def main():
     request = drive_service.files().get_media(fileId=file_id)
     image_bytes = request.execute()
 
-    # Gemini API (公式 SDK) による解析
+    # Gemini API (公式 SDK) による解析（503エラー対策のリトライ機能付き）
     client = genai.Client(api_key=API_KEY)
     current_year = datetime.datetime.now().year
 
@@ -87,14 +88,27 @@ def main():
       ]
     """
 
-    # Gemini 3.8 Flash または安定モデルで画像を送信
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=[
-            types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
-            prompt
-        ]
-    )
+    # 503エラー対策のリトライ処理（最大5回試行）
+    max_retries = 5
+    response = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
+                    prompt
+                ]
+            )
+            break # 成功したらループを抜ける
+        except Exception as e:
+            print(f"⚠️ AIサーバーが混雑中または一時エラーです (試行 {attempt}/{max_retries}): {e}")
+            if attempt == max_retries:
+                print("❌ 最大リトライ回数に達したため、処理を中断します。")
+                raise e
+            wait_time = attempt * 5 # 5秒、10秒、15秒…と待機時間を増やす
+            print(f"⏳ {wait_time}秒後に再試行します...")
+            time.sleep(wait_time)
 
     ai_text = response.text.strip()
     # マークダウンのバッククォートが万が一含まれている場合の除去
@@ -151,20 +165,20 @@ def main():
                 calendarEventId=main_event_id,
                 body=event_body
             ).execute()
-            print(f"   🔄 予定を更新/維持: {title} ({date_str})")
+            print(f"    🔄 予定を更新/維持: {title} ({date_str})")
 
             for extra_event in target_events[1:]:
                 calendar_service.events().delete(
                     calendarId=CALENDAR_ID,
                     eventId=extra_event['id']
                 ).execute()
-                print(f"   🗑️ 同日の重複していた余分な予定を削除しました: {date_str}")
+                print(f"    🗑️ 同日の重複していた余分な予定を削除しました: {date_str}")
         else:
             calendar_service.events().insert(
                 calendarId=CALENDAR_ID,
                 body=event_body
             ).execute()
-            print(f"   ➕ 新規登録完了: {title} ({date_str})")
+            print(f"    ➕ 新規登録完了: {title} ({date_str})")
 
     print(f"✔ 「{fileName}」の処理がすべて完了しました！")
 
